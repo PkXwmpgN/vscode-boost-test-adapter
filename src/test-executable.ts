@@ -99,11 +99,23 @@ export class TestExecutable {
 			throw new Error('Cannot find a list of test suite');
 		}
 
+		const rootTests = new Array<TestInfo>();
 		for (const suite of suites.children) {
 			switch (suite.type) {
-				case 'node_stmt':
-					tests.children.push(this.parseSuite(suite));
-					break;
+				case 'node_stmt': {
+					const current = this.parseSuite(suite);
+					tests.children.push(current);
+
+					const info = parseLabel(suite);
+
+					rootTests.push({
+						type: 'test',
+						id: info.name,
+						label: info.name,
+						file: this.sourcePrefix ? resolve(this.sourcePrefix, info.file) : info.file,
+						line: info.line - 1
+					})
+					break; }
 				case 'subgraph':
 					const current = <TestSuiteInfo>tests.children[tests.children.length - 1];
 					current.children = this.parseCases(current, suite);
@@ -111,6 +123,12 @@ export class TestExecutable {
 			}
 		}
 
+		for (var index in tests.children) {
+			const current = <TestSuiteInfo>tests.children[index]
+			if(current.children.length === 0) {
+				tests.children[index] = rootTests[index]
+			}
+		}
 		return tests;
 	}
 
@@ -128,7 +146,7 @@ export class TestExecutable {
 			const suites = ids.filter(id => !id.includes('/'));
 			const cases = ids.filter(id => !suites.some(s => id === s || id.startsWith(`${s}/`)));
 			const tests = suites.concat(cases);
-
+			
 			session = this.run(['-l', 'test_suite', '-t', tests.join(':')]);
 		} else {
 			session = this.run(['-l', 'test_suite']);
@@ -155,7 +173,7 @@ export class TestExecutable {
 			if (match) {
 				progress({
 					type: 'test',
-					test: `${suite}/${match[2]}`,
+					test: suite === undefined ? match[2] : `${suite}/${match[2]}`,
 					state: error === undefined ? 'passed' : 'failed',
 					message: error
 				});
@@ -169,6 +187,10 @@ export class TestExecutable {
 			if (match) {
 				error = match[3];
 				return;
+			}
+
+			if (error !== undefined) {
+				error = error.concat('\n').concat(line);
 			}
 
 			// suite start
